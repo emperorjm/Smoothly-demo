@@ -1,26 +1,80 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0D0D0F;
+  --foreground: #FFFFFF;
+  --surface: #1A1A1E;
+  --surface-light: #242428;
+  --border: #2A2A30;
+  --border-light: #3A3A42;
+  --text-secondary: #A0A0A8;
+  --text-muted: #6B6B75;
+  --coral: #FF6B6B;
+  --coral-light: #FF8A8A;
+  --purple: #7C5CFC;
+  --purple-light: #9B7FFF;
+  --gold: #FFD700;
+  --gold-dark: #B8860B;
+  --success: #4CAF50;
+  --error: #FF4444;
+  --warning: #FFAA00;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-light: var(--surface-light);
+  --color-border: var(--border);
+  --color-border-light: var(--border-light);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-coral: var(--coral);
+  --color-coral-light: var(--coral-light);
+  --color-purple: var(--purple);
+  --color-purple-light: var(--purple-light);
+  --color-gold: var(--gold);
+  --color-gold-dark: var(--gold-dark);
+  --color-success: var(--success);
+  --color-error: var(--error);
+  --color-warning: var(--warning);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+.reclaim-iframe-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  isolation: isolate;
+}
+
+.reclaim-iframe {
+  width: 100%;
+  max-width: 480px;
+  height: 80vh;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.reclaim-iframe-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.5rem;
 }
