@@ -11,12 +11,6 @@ export const SMTHLY_REWARDS_AMOUNT =
 export const RUM_CONTRACT_ADDRESS =
   process.env.NEXT_PUBLIC_RUM_CONTRACT_ADDRESS ?? "";
 
-export const RECLAIM_CONFIG = {
-  appId: process.env.NEXT_PUBLIC_RECLAIM_APP_ID ?? "",
-  appSecret: process.env.NEXT_PUBLIC_RECLAIM_APP_SECRET ?? "",
-  providerId: process.env.NEXT_PUBLIC_RECLAIM_PROVIDER_ID ?? "",
-} as const;
-
 export const TREASURY_CONTRACT_ADDRESS =
   process.env.NEXT_PUBLIC_TREASURY_CONTRACT_ADDRESS ?? "";
 

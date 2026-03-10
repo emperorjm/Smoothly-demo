@@ -22,7 +22,7 @@
 
 ### What the Demo Does
 
-Smoothly.me lets users **prove their Tinder likes count** using zero-knowledge proofs (via Reclaim Protocol), then **claim on-chain token rewards** (via XION) if they meet a qualification threshold. No personal dating data is ever exposed.
+Smoothly.web lets users **prove their Tinder likes count** using zero-knowledge proofs (via Reclaim Protocol), then **claim on-chain token rewards** (via XION) if they meet a qualification threshold. No personal dating data is ever exposed.
 
 **End-to-end flow:**
 
@@ -71,8 +71,9 @@ Smoothly.me lets users **prove their Tinder likes count** using zero-knowledge p
  |  +-----------------------------------------------------------+ |
  +-----------------------------------------------------------------+
 
- RPC Proxy (src/app/api/rpc/):
- Browser --> /api/rpc --> XION RPC node (avoids CORS issues)
+ API Routes:
+ Browser --> /api/reclaim --> Reclaim SDK init (keeps appSecret server-side)
+ Browser --> /api/rpc    --> XION RPC node (avoids CORS issues)
 ```
 
 ### Provider Hierarchy
@@ -147,40 +148,36 @@ npm install
 
 ### Environment Variables
 
-Create a `.env.local` file in the project root:
+Create a `.env.local` file in the project root. You can use the demo values below to get started quickly on XION testnet — replace them with your own credentials for production:
 
 ```env
-# ── Reclaim Protocol ──
-NEXT_PUBLIC_RECLAIM_APP_ID=your_app_id
-NEXT_PUBLIC_RECLAIM_APP_SECRET=your_app_secret
-NEXT_PUBLIC_RECLAIM_PROVIDER_ID=your_provider_id
-
 # ── XION Blockchain ──
-NEXT_PUBLIC_TREASURY_CONTRACT_ADDRESS=your_treasury_contract
-NEXT_PUBLIC_SMTHLY_TOKEN_ADDRESS=your_cw20_token_address
-NEXT_PUBLIC_RPC_ENDPOINT=https://rpc.xion-testnet-2.burnt.com:443
-NEXT_PUBLIC_REST_ENDPOINT=https://api.xion-testnet-2.burnt.com
+NEXT_PUBLIC_TREASURY_CONTRACT_ADDRESS="xion1wewwvuf2rrg7ae3e43u6k0x2nq3edeycp0nmwpyz7whaw7a4zrnsfthzea"
+NEXT_PUBLIC_RPC_ENDPOINT="/api/rpc"
+NEXT_PUBLIC_REST_ENDPOINT="https://api.xion-testnet-2.burnt.com"
+NEXT_PUBLIC_SMTHLY_TOKEN_ADDRESS=""
 
 # ── XION RPC Proxy (server-side only, no NEXT_PUBLIC_ prefix) ──
-XION_RPC_ENDPOINT=https://rpc.xion-testnet-2.burnt.com:443
+XION_RPC_ENDPOINT="https://rpc.xion-testnet-2.burnt.com:443"
 
-# ── App Config ──
-NEXT_PUBLIC_TINDER_PRO_THRESHOLD=50
-NEXT_PUBLIC_SMTHLY_REWARDS_AMOUNT=1000000
-NEXT_PUBLIC_RUM_CONTRACT_ADDRESS=optional_rum_contract
+# ── Reclaim Protocol (appId and appSecret are server-side only) ──
+RECLAIM_APP_ID="0x7a21a5B5206dd21Ab17699ec1CD25F4Dbe8DA3D0"
+NEXT_PUBLIC_RECLAIM_PROVIDER_ID="ae25fa88-2572-4c3e-81cf-e9f980cf18aa"
+RECLAIM_APP_SECRET="0xc9a728575873aa641e5407ee9e86622d4014638ef0210f27e57695035bdf2375"
+
+# ── Token Configuration ──
+NEXT_PUBLIC_SMTHLY_REWARDS_AMOUNT="1000000"
+NEXT_PUBLIC_TINDER_PRO_THRESHOLD="10"
+NEXT_PUBLIC_RUM_CONTRACT_ADDRESS="xion19ytfcva9m2xkflfaeh58vzyl6m3s6aansztctrsk723pssw6rhxqpaa9ea"
 ```
 
-All `NEXT_PUBLIC_` variables are exposed to the browser. The `XION_RPC_ENDPOINT` variable is server-side only, used by the RPC proxy route.
+> **Note:** These demo values are pre-configured for XION testnet and the [Tinder Likes and Matches](https://dev.reclaimprotocol.org/provider/details/ae25fa88-2572-4c3e-81cf-e9f980cf18aa) Reclaim provider. They are suitable for development and testing. For production, replace all values with your own — see [Adapting for Production](#8-adapting-for-production).
 
-These are read in `src/lib/config.ts`:
+All `NEXT_PUBLIC_` variables are exposed to the browser. `XION_RPC_ENDPOINT`, `RECLAIM_APP_ID`, and `RECLAIM_APP_SECRET` are server-side only — they are never sent to the browser.
+
+Other config values are read in `src/lib/config.ts`:
 
 ```typescript
-export const RECLAIM_CONFIG = {
-  appId: process.env.NEXT_PUBLIC_RECLAIM_APP_ID ?? "",
-  appSecret: process.env.NEXT_PUBLIC_RECLAIM_APP_SECRET ?? "",
-  providerId: process.env.NEXT_PUBLIC_RECLAIM_PROVIDER_ID ?? "",
-} as const;
-
 export const TREASURY_CONTRACT_ADDRESS =
   process.env.NEXT_PUBLIC_TREASURY_CONTRACT_ADDRESS ?? "";
 
@@ -188,6 +185,8 @@ export const RPC_ENDPOINT =
   process.env.NEXT_PUBLIC_RPC_ENDPOINT ?? "";
 // ... etc.
 ```
+
+Reclaim credentials (`RECLAIM_APP_ID`, `RECLAIM_APP_SECRET`, `NEXT_PUBLIC_RECLAIM_PROVIDER_ID`) are read directly in the API route (`src/app/api/reclaim/route.ts`) — see [Server-Side Initialization](#server-side-initialization) below.
 
 ### .npmrc Requirement
 
@@ -221,45 +220,64 @@ This is applied automatically via `patch-package` in the `postinstall` script.
 
 > **Source file:** `src/components/VerificationFlow.tsx`
 
-### SDK Setup and Initialization
+### Server-Side Initialization
 
-Import and initialize the Reclaim SDK:
+The Reclaim SDK is initialized server-side via an API route to keep the `appSecret` out of the browser bundle. The API route creates the proof request and serializes it using `toJsonString()`. The client deserializes it with `fromJsonString()` and uses it normally.
+
+> **Source file:** `src/app/api/reclaim/route.ts`
 
 ```typescript
-import { ReclaimProofRequest, verifyProof } from "@reclaimprotocol/js-sdk";
-import type { Proof } from "@reclaimprotocol/js-sdk";
+// Server-side API route (src/app/api/reclaim/route.ts)
+import { ReclaimProofRequest } from "@reclaimprotocol/js-sdk";
 
-// Initialize a proof request
-const proofRequest = await ReclaimProofRequest.init(
-  RECLAIM_CONFIG.appId,
-  RECLAIM_CONFIG.appSecret,
-  RECLAIM_CONFIG.providerId
-);
+const APP_ID = process.env.RECLAIM_APP_ID ?? "";
+const APP_SECRET = process.env.RECLAIM_APP_SECRET ?? "";
+const PROVIDER_ID = process.env.NEXT_PUBLIC_RECLAIM_PROVIDER_ID ?? "";
+
+export async function POST(req: NextRequest) {
+  const { method, redirectUrl } = await req.json();
+
+  const proofRequest = await ReclaimProofRequest.init(
+    APP_ID, APP_SECRET, PROVIDER_ID, options
+  );
+
+  // Serialize the proof request (safe to send to client)
+  const reclaimProofRequestConfig = proofRequest.toJsonString();
+  return NextResponse.json({ reclaimProofRequestConfig });
+}
+```
+
+```typescript
+// Client-side (src/components/VerificationFlow.tsx)
+import { ReclaimProofRequest, verifyProof } from "@reclaimprotocol/js-sdk";
+
+async function initReclaim(method, redirectUrl?) {
+  const res = await fetch("/api/reclaim", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ method, redirectUrl }),
+  });
+  const { reclaimProofRequestConfig } = await res.json();
+  // Reconstruct the proof request on the client
+  return ReclaimProofRequest.fromJsonString(reclaimProofRequestConfig);
+}
 ```
 
 ### Three Verification Methods
 
-The demo supports three ways for users to complete verification:
+The demo supports three ways for users to complete verification. All methods use the `initReclaim()` helper above to get a proof request from the server.
 
 #### 1. Browser Extension
 
 Uses the Reclaim browser extension (Chrome). Fastest method if installed.
 
 ```typescript
+const proofRequest = await initReclaim("extension", window.location.href);
+
 // Check if extension is available
 const available = await proofRequest.isBrowserExtensionAvailable(500);
 
-// Initialize with extension mode
-const proofRequest = await ReclaimProofRequest.init(
-  RECLAIM_CONFIG.appId,
-  RECLAIM_CONFIG.appSecret,
-  RECLAIM_CONFIG.providerId,
-  { useBrowserExtension: true }
-);
-
-proofRequest.setRedirectUrl(window.location.href);
 proofRequest.triggerReclaimFlow();
-
 await proofRequest.startSession({ onSuccess, onError });
 ```
 
@@ -268,16 +286,9 @@ await proofRequest.startSession({ onSuccess, onError });
 Opens a QR code for the user to scan with the Reclaim mobile app.
 
 ```typescript
-const proofRequest = await ReclaimProofRequest.init(
-  RECLAIM_CONFIG.appId,
-  RECLAIM_CONFIG.appSecret,
-  RECLAIM_CONFIG.providerId,
-  { useBrowserExtension: false }
-);
+const proofRequest = await initReclaim("mobile", window.location.href);
 
-proofRequest.setRedirectUrl(window.location.href);
 proofRequest.triggerReclaimFlow();
-
 await proofRequest.startSession({ onSuccess, onError });
 ```
 
@@ -286,15 +297,7 @@ await proofRequest.startSession({ onSuccess, onError });
 Opens verification in an embedded iframe using Reclaim's web portal.
 
 ```typescript
-const proofRequest = await ReclaimProofRequest.init(
-  RECLAIM_CONFIG.appId,
-  RECLAIM_CONFIG.appSecret,
-  RECLAIM_CONFIG.providerId,
-  {
-    customSharePageUrl: "https://portal.reclaimprotocol.org/kernel",
-    useAppClip: false,
-  }
-);
+const proofRequest = await initReclaim("web");
 
 const url = await proofRequest.getRequestUrl();
 // Render url in an iframe
@@ -647,6 +650,7 @@ const handleClaimTokens = async () => {
 | `src/app/verify/page.tsx` | Wallet connection + verification UI |
 | `src/app/results/page.tsx` | Results display, qualification check, token claiming |
 | `src/app/dashboard/page.tsx` | Post-claim dashboard with balance and AI chat preview |
+| `src/app/api/reclaim/route.ts` | Server-side Reclaim SDK initialization (keeps appSecret off client) |
 | `src/app/api/rpc/[[...path]]/route.ts` | RPC proxy to XION node (avoids CORS) |
 | `src/components/VerificationFlow.tsx` | Reclaim SDK integration: all three verification methods |
 | `src/components/WalletConnect.tsx` | Wallet connect/disconnect button |
@@ -678,11 +682,10 @@ const handleClaimTokens = async () => {
 
 **`appSecret` handling:**
 
-In this demo, `NEXT_PUBLIC_RECLAIM_APP_SECRET` is exposed to the browser (required by the Reclaim JS SDK for client-side proof requests). For production:
+The Reclaim `appSecret` is kept server-side. `ReclaimProofRequest.init()` is called in the API route (`src/app/api/reclaim/route.ts`) using non-`NEXT_PUBLIC_` env vars (`RECLAIM_APP_ID`, `RECLAIM_APP_SECRET`), so the secret is never included in the client bundle. The serialized proof request config returned to the client via `toJsonString()` contains only the signed request data — not the secret itself.
 
-- The Reclaim SDK currently requires the secret client-side to initialize `ReclaimProofRequest`. This is acceptable because the secret is used to sign the proof request, not to access user data.
-- If Reclaim adds server-side initialization support, move the `ReclaimProofRequest.init()` call to an API route and only send the request URL to the client.
 - **Never** use the Reclaim `appSecret` for any other authentication purpose.
+- The `NEXT_PUBLIC_RECLAIM_PROVIDER_ID` is not sensitive and remains public.
 
 **Token transfer authorization:**
 

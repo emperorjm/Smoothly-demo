@@ -2,7 +2,6 @@
 
 import { Card } from "@/components/ui/Card";
 import { GradientButton } from "@/components/ui/GradientButton";
-import { RECLAIM_CONFIG } from "@/lib/config";
 import { useSmoothly } from "@/contexts/SmoothlyContext";
 import { parseLikeCount } from "@/lib/parseMatchCount";
 import { ReclaimProofRequest, verifyProof } from "@reclaimprotocol/js-sdk";
@@ -21,6 +20,25 @@ type Status =
 
 type VerificationMethod = "extension" | "mobile" | "web";
 
+async function initReclaim(
+  method: VerificationMethod,
+  redirectUrl?: string
+): Promise<ReclaimProofRequest> {
+  const res = await fetch("/api/reclaim", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ method, redirectUrl }),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error ?? "Failed to initialize verification");
+  }
+
+  const { reclaimProofRequestConfig } = await res.json();
+  return ReclaimProofRequest.fromJsonString(reclaimProofRequestConfig);
+}
+
 export function VerificationFlow() {
   const { address, setVerificationResult } = useSmoothly();
   const router = useRouter();
@@ -36,11 +54,7 @@ export function VerificationFlow() {
   useEffect(() => {
     async function detectExtension() {
       try {
-        const proofRequest = await ReclaimProofRequest.init(
-          RECLAIM_CONFIG.appId,
-          RECLAIM_CONFIG.appSecret,
-          RECLAIM_CONFIG.providerId
-        );
+        const proofRequest = await initReclaim("extension");
         const available = await proofRequest.isBrowserExtensionAvailable(500);
         setExtensionAvailable(available);
         if (available) {
@@ -113,12 +127,7 @@ export function VerificationFlow() {
       };
 
       if (verificationMethod === "web") {
-        const proofRequest = await ReclaimProofRequest.init(
-          RECLAIM_CONFIG.appId,
-          RECLAIM_CONFIG.appSecret,
-          RECLAIM_CONFIG.providerId,
-          { customSharePageUrl: "https://portal.reclaimprotocol.org/kernel", useAppClip: false }
-        );
+        const proofRequest = await initReclaim("web");
 
         const url = await proofRequest.getRequestUrl();
         setRequestUrl(url);
@@ -127,15 +136,11 @@ export function VerificationFlow() {
 
         await proofRequest.startSession({ onSuccess, onError });
       } else {
-        const useBrowserExtension = verificationMethod === "extension";
-        const proofRequest = await ReclaimProofRequest.init(
-          RECLAIM_CONFIG.appId,
-          RECLAIM_CONFIG.appSecret,
-          RECLAIM_CONFIG.providerId,
-          { useBrowserExtension }
+        const proofRequest = await initReclaim(
+          verificationMethod,
+          window.location.href
         );
 
-        proofRequest.setRedirectUrl(window.location.href);
         proofRequest.triggerReclaimFlow();
 
         await proofRequest.startSession({ onSuccess, onError });
