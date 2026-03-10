@@ -112,7 +112,7 @@ You need three values from the [Reclaim Developer Portal](https://dev.reclaimpro
 
 | Value | Description |
 |-------|------------|
-| Treasury contract | An XION meta-account contract that sponsors gas fees for users |
+| Treasury contract | An XION meta-account contract that sponsors gas fees for users — see the [Treasury Contracts guide](https://docs.burnt.com/xion/developers/getting-started-advanced/gasless-ux-and-permission-grants/treasury-contracts) for setup details |
 | CW20 token contract | The SMTHLY token contract address on XION testnet |
 | RPC endpoint | XION testnet RPC URL (default: `https://rpc.xion-testnet-2.burnt.com:443`) |
 | REST endpoint | XION testnet REST URL |
