@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/Card";
 import { GradientButton } from "@/components/ui/GradientButton";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { WalletConnect } from "@/components/WalletConnect";
-import { TINDER_PRO_THRESHOLD, SMTHLY_REWARDS_AMOUNT, SMTHLY_TOKEN_ADDRESS } from "@/lib/config";
+import { TINDER_PRO_THRESHOLD, SMTHLY_REWARDS_AMOUNT } from "@/lib/config";
 import { transferTokens } from "@/lib/tokenService";
 import { useSmoothly } from "@/contexts/SmoothlyContext";
 import Link from "next/link";
@@ -37,7 +37,7 @@ export default function ResultsPage() {
     try {
       await transferTokens(
         client,
-        SMTHLY_TOKEN_ADDRESS,
+        address,
         address,
         SMTHLY_REWARDS_AMOUNT
       );

@@ -14,7 +14,8 @@
 5. [XION Abstraxion Wallet Integration](#5-xion-abstraxion-wallet-integration)
 6. [Application Flow](#6-application-flow)
 7. [Key Files Reference](#7-key-files-reference)
-8. [Adapting for Production](#8-adapting-for-production)
+8. [Token Factory CLI Reference](#8-token-factory-cli-reference)
+9. [Adapting for Production](#9-adapting-for-production)
 
 ---
 
@@ -42,7 +43,7 @@ Smoothly.web lets users **prove their Tinder likes count** using zero-knowledge 
 | zkTLS Proofs | Reclaim Protocol JS SDK v4 — [Tinder Likes and Matches provider](https://dev.reclaimprotocol.org/provider/details/ae25fa88-2572-4c3e-81cf-e9f980cf18aa) |
 | Blockchain | XION (Cosmos-based, testnet) |
 | Wallet | Abstraxion (XION's account abstraction wallet) |
-| Token Standard | CW20 (CosmWasm) |
+| Token Standard | Token Factory (Cosmos SDK tokenfactory module) |
 
 ### Architecture Diagram
 
@@ -58,6 +59,12 @@ Smoothly.web lets users **prove their Tinder likes count** using zero-knowledge 
                                                          +------------------+
                                                          |  /dashboard      |
                                                          |  Balance + Chat  |
+                                                         +------------------+
+
+                                                         +------------------+
+                                                         |  /admin          |
+                                                         |  Token factory   |
+                                                         |  admin dashboard |
                                                          +------------------+
 
  Providers (src/app/layout.tsx):
@@ -113,7 +120,8 @@ You need three values from the [Reclaim Developer Portal](https://dev.reclaimpro
 | Value | Description |
 |-------|------------|
 | Treasury contract | An XION meta-account contract that sponsors gas fees for users — see the [Treasury Contracts guide](https://docs.burnt.com/xion/developers/getting-started-advanced/gasless-ux-and-permission-grants/treasury-contracts) for setup details |
-| CW20 token contract | The SMTHLY token contract address on XION testnet |
+| Token factory denom | The SMTHLY token denom created via the tokenfactory module (e.g., `factory/xion15r5.../SMTHLY`) |
+| Token admin | The address that controls minting/burning — currently the treasury contract (`xion1z9ta8...`) |
 | RPC endpoint | XION testnet RPC URL (default: `https://rpc.xion-testnet-2.burnt.com:443`) |
 | REST endpoint | XION testnet REST URL |
 
@@ -152,10 +160,9 @@ Create a `.env.local` file in the project root. You can use the demo values belo
 
 ```env
 # ── XION Blockchain ──
-NEXT_PUBLIC_TREASURY_CONTRACT_ADDRESS="xion1wewwvuf2rrg7ae3e43u6k0x2nq3edeycp0nmwpyz7whaw7a4zrnsfthzea"
+NEXT_PUBLIC_TREASURY_CONTRACT_ADDRESS="xion1sm3qp7kdqkkqgq5sdze6fjvk02a9psqqht2s575kdw06y4prlqcqhqa0mj"
 NEXT_PUBLIC_RPC_ENDPOINT="/api/rpc"
 NEXT_PUBLIC_REST_ENDPOINT="https://api.xion-testnet-2.burnt.com"
-NEXT_PUBLIC_SMTHLY_TOKEN_ADDRESS=""
 
 # ── XION RPC Proxy (server-side only, no NEXT_PUBLIC_ prefix) ──
 XION_RPC_ENDPOINT="https://rpc.xion-testnet-2.burnt.com:443"
@@ -166,12 +173,15 @@ NEXT_PUBLIC_RECLAIM_PROVIDER_ID="ae25fa88-2572-4c3e-81cf-e9f980cf18aa"
 RECLAIM_APP_SECRET="0xc9a728575873aa641e5407ee9e86622d4014638ef0210f27e57695035bdf2375"
 
 # ── Token Configuration ──
+NEXT_PUBLIC_SMTHLY_TOKEN_DENOM="factory/xion15r5yxaeqwlx5zz5f2vwg87vz3m7d6dd5pdd6qp/SMTHLY"
 NEXT_PUBLIC_SMTHLY_REWARDS_AMOUNT="1000000"
 NEXT_PUBLIC_TINDER_PRO_THRESHOLD="10"
 NEXT_PUBLIC_RUM_CONTRACT_ADDRESS="xion19ytfcva9m2xkflfaeh58vzyl6m3s6aansztctrsk723pssw6rhxqpaa9ea"
+NEXT_PUBLIC_SMTHLY_ADMIN_ADDRESS="xion1z9ta8lhj65qs65h7q8atyc5uxu3wjua7aujyt5hjfs97tq6jna8splmrhr"
+NEXT_PUBLIC_EXPLORER_BASE_URL="https://www.mintscan.io/xion-testnet"
 ```
 
-> **Note:** These demo values are pre-configured for XION testnet and the [Tinder Likes and Matches](https://dev.reclaimprotocol.org/provider/details/ae25fa88-2572-4c3e-81cf-e9f980cf18aa) Reclaim provider. They are suitable for development and testing. For production, replace all values with your own — see [Adapting for Production](#8-adapting-for-production).
+> **Note:** These demo values are pre-configured for XION testnet and the [Tinder Likes and Matches](https://dev.reclaimprotocol.org/provider/details/ae25fa88-2572-4c3e-81cf-e9f980cf18aa) Reclaim provider. They are suitable for development and testing. For production, replace all values with your own — see [Adapting for Production](#9-adapting-for-production).
 
 All `NEXT_PUBLIC_` variables are exposed to the browser. `XION_RPC_ENDPOINT`, `RECLAIM_APP_ID`, and `RECLAIM_APP_SECRET` are server-side only — they are never sent to the browser.
 
@@ -183,6 +193,12 @@ export const TREASURY_CONTRACT_ADDRESS =
 
 export const RPC_ENDPOINT =
   process.env.NEXT_PUBLIC_RPC_ENDPOINT ?? "";
+
+export const SMTHLY_ADMIN_ADDRESS =
+  process.env.NEXT_PUBLIC_SMTHLY_ADMIN_ADDRESS ?? "";
+
+export const EXPLORER_BASE_URL =
+  process.env.NEXT_PUBLIC_EXPLORER_BASE_URL ?? "";
 // ... etc.
 ```
 
@@ -465,35 +481,35 @@ export function WalletConnect() {
 
 > **Source file:** `src/lib/tokenService.ts`
 
-The signing client from `useAbstraxionSigningClient` provides two key methods:
+SMTHLY is a **token factory** denom (not a CW20 contract), so balances are queried via the bank module REST API and transfers use `sendTokens` (bank send):
 
-#### Query a CW20 Balance
+#### Query a Token Factory Balance
 
 ```typescript
-export async function queryBalance(
-  client: SigningClient,
-  address: string
-): Promise<string> {
-  const result = await client.queryContractSmart(SMTHLY_TOKEN_ADDRESS, {
-    balance: { address },
-  });
-  return (result as { balance: string }).balance ?? "0";
+export async function queryBalance(address: string): Promise<string> {
+  if (!SMTHLY_TOKEN_DENOM || !REST_ENDPOINT) return "0";
+
+  const url = `${REST_ENDPOINT}/cosmos/bank/v1beta1/balances/${address}/by_denom?denom=${encodeURIComponent(SMTHLY_TOKEN_DENOM)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = (await res.json()) as { balance?: { amount?: string } };
+  return data.balance?.amount ?? "0";
 }
 ```
 
-#### Transfer CW20 Tokens
+#### Transfer Tokens (Bank Send)
 
 ```typescript
 export async function transferTokens(
-  client: SigningClient,
+  client: SigningCosmWasmClient,
   sender: string,
   recipient: string,
   amount: string
 ): Promise<unknown> {
-  return client.execute(
+  return client.sendTokens(
     sender,
-    SMTHLY_TOKEN_ADDRESS,
-    { transfer: { recipient, amount } },
+    recipient,
+    [{ denom: SMTHLY_TOKEN_DENOM, amount }],
     "auto"  // auto gas estimation
   );
 }
@@ -565,7 +581,7 @@ The catch-all route `[[...path]]` forwards any sub-path (e.g., `/api/rpc/status`
    ├── Shows likes count and progress toward threshold
    ├── If qualified (likes >= threshold):
    │   └── "Claim SMTHLY" button calls transferTokens()
-   │       └── Abstraxion signing client executes CW20 transfer
+   │       └── Abstraxion signing client executes bank send (sendTokens)
    │           └── Treasury contract sponsors the gas fee
    └── After claiming → link to /dashboard
 
@@ -618,7 +634,7 @@ export function isProQualified(matchCount: number): boolean {
 }
 ```
 
-The threshold defaults to 50 but is configurable via `NEXT_PUBLIC_TINDER_PRO_THRESHOLD`.
+The threshold defaults to 50 in code but is set to 10 in the demo `.env.local`. Configure via `NEXT_PUBLIC_TINDER_PRO_THRESHOLD`.
 
 ### Token Claiming Flow
 
@@ -628,7 +644,7 @@ In `src/app/results/page.tsx`, qualified users can claim tokens:
 const handleClaimTokens = async () => {
   await transferTokens(
     client,                  // Abstraxion signing client
-    SMTHLY_TOKEN_ADDRESS,    // CW20 contract (sender = treasury)
+    address,                 // User's XION address (sender)
     address,                 // User's XION address (recipient)
     SMTHLY_REWARDS_AMOUNT    // Amount to transfer
   );
@@ -637,7 +653,7 @@ const handleClaimTokens = async () => {
 };
 ```
 
-> **Note:** In this demo, the token contract address is passed as the `sender` to `transferTokens`. In production, the treasury meta-account would execute the transfer on behalf of the user, so gas is sponsored.
+> **Note:** `transferTokens` uses `client.sendTokens()` (a bank module send). The treasury meta-account sponsors the gas fee via the Abstraxion signing client.
 
 ---
 
@@ -654,29 +670,152 @@ const handleClaimTokens = async () => {
 | `src/app/api/rpc/[[...path]]/route.ts` | RPC proxy to XION node (avoids CORS) |
 | `src/components/VerificationFlow.tsx` | Reclaim SDK integration: all three verification methods |
 | `src/components/WalletConnect.tsx` | Wallet connect/disconnect button |
-| `src/components/ui/` | Reusable UI components (Badge, Card, GradientButton, ProgressBar) |
+| `src/components/ui/` | Reusable UI components (Badge, Card, GradientButton, Input, ProgressBar) |
 | `src/contexts/SmoothlyContext.tsx` | Central state: wallet + verification + token balance |
 | `src/lib/config.ts` | Environment variable loading and exports |
 | `src/lib/parseMatchCount.ts` | Extract likes count from Reclaim proof data |
 | `src/lib/threshold.ts` | Qualification threshold logic |
-| `src/lib/tokenService.ts` | CW20 query and transfer functions |
+| `src/lib/tokenService.ts` | Token factory balance query (bank REST) and transfer functions (sendTokens) |
+| `src/lib/tokenFactoryService.ts` | Token factory message builders (mint, burn, change-admin, set-metadata) and REST queries |
+| `src/app/admin/page.tsx` | Token factory admin dashboard (mint, burn, metadata, supply) |
 | `patches/@burnt-labs+abstraxion-core+...patch` | Fix for Abstraxion authorization decoder |
 | `.npmrc` | `legacy-peer-deps=true` for Abstraxion compatibility |
 
 ---
 
-## 8. Adapting for Production
+## 8. Token Factory CLI Reference
+
+The SMTHLY token is a **token factory** denom, not a CW20 contract. Token factory denoms are managed via the Cosmos SDK `tokenfactory` module. While the web app handles basic transfers via the bank module, admin operations (mint, burn, metadata, etc.) can be performed via the `xiond` CLI.
+
+All commands below use:
+```
+--chain-id xion-testnet-2 --node https://rpc.xion-testnet-2.burnt.com:443
+```
+
+### Query Commands
+
+#### Check balance
+
+```bash
+xiond query bank balance <address> \
+  "factory/xion15r5yxaeqwlx5zz5f2vwg87vz3m7d6dd5pdd6qp/SMTHLY" \
+  --chain-id xion-testnet-2 --node https://rpc.xion-testnet-2.burnt.com:443
+```
+
+#### Total supply
+
+```bash
+xiond query bank total --denom \
+  "factory/xion15r5yxaeqwlx5zz5f2vwg87vz3m7d6dd5pdd6qp/SMTHLY" \
+  --chain-id xion-testnet-2 --node https://rpc.xion-testnet-2.burnt.com:443
+```
+
+#### Denom metadata
+
+```bash
+xiond query bank denom-metadata --denom \
+  "factory/xion15r5yxaeqwlx5zz5f2vwg87vz3m7d6dd5pdd6qp/SMTHLY" \
+  --chain-id xion-testnet-2 --node https://rpc.xion-testnet-2.burnt.com:443
+```
+
+#### Denoms by creator
+
+```bash
+xiond query tokenfactory denoms-from-creator \
+  xion15r5yxaeqwlx5zz5f2vwg87vz3m7d6dd5pdd6qp \
+  --chain-id xion-testnet-2 --node https://rpc.xion-testnet-2.burnt.com:443
+```
+
+#### Denom authority / admin
+
+```bash
+xiond query tokenfactory denom-authority-metadata \
+  "factory/xion15r5yxaeqwlx5zz5f2vwg87vz3m7d6dd5pdd6qp/SMTHLY" \
+  --chain-id xion-testnet-2 --node https://rpc.xion-testnet-2.burnt.com:443
+```
+
+### Admin Commands
+
+These require signing with the token admin key. The current token admin is the treasury contract address (`xion1z9ta8lhj65qs65h7q8atyc5uxu3wjua7aujyt5hjfs97tq6jna8splmrhr`).
+
+#### Mint tokens
+
+```bash
+xiond tx tokenfactory mint <amount>factory/xion15r5yxaeqwlx5zz5f2vwg87vz3m7d6dd5pdd6qp/SMTHLY \
+  --from <admin-key> \
+  --chain-id xion-testnet-2 --node https://rpc.xion-testnet-2.burnt.com:443
+```
+
+#### Burn tokens
+
+```bash
+xiond tx tokenfactory burn <amount>factory/xion15r5yxaeqwlx5zz5f2vwg87vz3m7d6dd5pdd6qp/SMTHLY \
+  --from <admin-key> \
+  --chain-id xion-testnet-2 --node https://rpc.xion-testnet-2.burnt.com:443
+```
+
+#### Change admin
+
+```bash
+xiond tx tokenfactory change-admin \
+  "factory/xion15r5yxaeqwlx5zz5f2vwg87vz3m7d6dd5pdd6qp/SMTHLY" \
+  <new-admin-address> \
+  --from <current-admin-key> \
+  --chain-id xion-testnet-2 --node https://rpc.xion-testnet-2.burnt.com:443
+```
+
+#### Set denom metadata
+
+```bash
+xiond tx tokenfactory set-denom-metadata \
+  "factory/xion15r5yxaeqwlx5zz5f2vwg87vz3m7d6dd5pdd6qp/SMTHLY" \
+  "Smoothly Token" "SMTHLY" "Smoothly.me reward token" \
+  --from <admin-key> \
+  --chain-id xion-testnet-2 --node https://rpc.xion-testnet-2.burnt.com:443
+```
+
+#### Force transfer
+
+> **Note:** Force transfer has been removed from the demo UI but remains available via CLI.
+
+```bash
+xiond tx tokenfactory force-transfer \
+  <amount>factory/xion15r5yxaeqwlx5zz5f2vwg87vz3m7d6dd5pdd6qp/SMTHLY \
+  <from-address> <to-address> \
+  --from <admin-key> \
+  --chain-id xion-testnet-2 --node https://rpc.xion-testnet-2.burnt.com:443
+```
+
+### Treasury Contract Permissions
+
+The current token admin is the treasury contract. The treasury contract's web interface (admin dashboard) only supports granting permissions for three operations:
+
+| Permission | Description |
+|-----------|-------------|
+| **Send** | Transfer tokens between addresses (bank send) |
+| **Mint** | Create new tokens (admin-only) |
+| **Burn** | Destroy tokens (admin-only) |
+
+Mint and burn are admin-only functions — only the token admin (treasury contract) can execute them.
+
+All other token factory admin operations — **change-admin**, **set-denom-metadata**, and **force-transfer** — must be executed directly via the `xiond` CLI, as the treasury contract interface does not currently expose these actions.
+
+---
+
+## 9. Adapting for Production
 
 ### What to Replace
 
 | Demo Value | Production Replacement |
 |-----------|----------------------|
 | Reclaim `appId` / `appSecret` / `providerId` | Your own credentials from Reclaim Developer Portal |
-| `SMTHLY_TOKEN_ADDRESS` | Your production CW20 token contract |
+| `SMTHLY_TOKEN_DENOM` | Your production token factory denom |
 | `TREASURY_CONTRACT_ADDRESS` | Your production treasury/meta-account |
 | RPC/REST endpoints | XION mainnet endpoints (when available) |
 | `TINDER_PRO_THRESHOLD` | Your desired qualification threshold |
 | `SMTHLY_REWARDS_AMOUNT` | Your desired reward amount |
+| `SMTHLY_ADMIN_ADDRESS` | Your token admin (treasury contract) address |
+| `EXPLORER_BASE_URL` | Your block explorer URL (mainnet Mintscan, etc.) |
 
 ### Security Considerations
 
@@ -691,7 +830,7 @@ The Reclaim `appSecret` is kept server-side. `ReclaimProofRequest.init()` is cal
 
 In production, the token claim should be validated server-side:
 - Verify the Reclaim proof on your backend before executing the transfer
-- Use a server-side signing key or treasury allowance to execute the CW20 transfer
+- Use a server-side signing key or treasury allowance to execute the token transfer
 - Prevent double-claiming by tracking which addresses have already claimed
 
 **RPC proxy:**

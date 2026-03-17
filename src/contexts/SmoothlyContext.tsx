@@ -52,10 +52,10 @@ export function SmoothlyProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshBalance = useCallback(async () => {
-    if (!client || !account?.bech32Address) return;
-    const balance = await queryBalance(client, account.bech32Address);
+    if (!account?.bech32Address) return;
+    const balance = await queryBalance(account.bech32Address);
     setSmthlyBalance(balance);
-  }, [client, account?.bech32Address]);
+  }, [account?.bech32Address]);
 
   return (
     <SmoothlyContext.Provider

@@ -1,28 +1,15 @@
-import { SMTHLY_TOKEN_ADDRESS } from "@/lib/config";
+import { SMTHLY_TOKEN_DENOM, REST_ENDPOINT } from "@/lib/config";
+import type { SigningCosmWasmClient } from "@cosmjs/cosmwasm-stargate";
 
-interface SigningClient {
-  queryContractSmart(address: string, queryMsg: unknown): Promise<unknown>;
-  execute(
-    sender: string,
-    contract: string,
-    msg: unknown,
-    fee: number | "auto" | { amount: { denom: string; amount: string }[]; gas: string },
-    memo?: string,
-    funds?: readonly { denom: string; amount: string }[]
-  ): Promise<unknown>;
-}
-
-export async function queryBalance(
-  client: SigningClient,
-  address: string
-): Promise<string> {
-  if (!SMTHLY_TOKEN_ADDRESS) return "0";
+export async function queryBalance(address: string): Promise<string> {
+  if (!SMTHLY_TOKEN_DENOM || !REST_ENDPOINT) return "0";
 
   try {
-    const result = (await client.queryContractSmart(SMTHLY_TOKEN_ADDRESS, {
-      balance: { address },
-    })) as { balance: string };
-    return result.balance ?? "0";
+    const url = `${REST_ENDPOINT}/cosmos/bank/v1beta1/balances/${address}/by_denom?denom=${encodeURIComponent(SMTHLY_TOKEN_DENOM)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = (await res.json()) as { balance?: { amount?: string } };
+    return data.balance?.amount ?? "0";
   } catch (error) {
     console.warn("Failed to query SMTHLY balance:", error);
     return "0";
@@ -30,17 +17,15 @@ export async function queryBalance(
 }
 
 export async function transferTokens(
-  client: SigningClient,
+  client: SigningCosmWasmClient,
   sender: string,
   recipient: string,
   amount: string
 ): Promise<unknown> {
-  return client.execute(
+  return client.sendTokens(
     sender,
-    SMTHLY_TOKEN_ADDRESS,
-    {
-      transfer: { recipient, amount },
-    },
+    recipient,
+    [{ denom: SMTHLY_TOKEN_DENOM, amount }],
     "auto"
   );
 }

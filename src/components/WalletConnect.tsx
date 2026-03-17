@@ -1,18 +1,34 @@
 "use client";
 
 import { useSmoothly } from "@/contexts/SmoothlyContext";
+import { useState } from "react";
 
 export function WalletConnect() {
   const { isConnected, isConnecting, address, login, logout } = useSmoothly();
+  const [copied, setCopied] = useState(false);
 
   if (isConnected && address) {
     const truncated = `${address.slice(0, 10)}...${address.slice(-6)}`;
+
+    function handleCopy() {
+      navigator.clipboard.writeText(address!).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      });
+    }
+
     return (
       <div className="flex items-center gap-2">
-        <div className="flex items-center gap-3 px-4 py-2.5 bg-surface border border-border rounded-xl">
+        <button
+          onClick={handleCopy}
+          title={copied ? "Copied!" : "Copy address"}
+          className="flex items-center gap-3 px-4 py-2.5 bg-surface border border-border rounded-xl hover:border-coral transition-all duration-200 cursor-pointer"
+        >
           <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
-          <span className="text-sm text-text-secondary font-mono">{truncated}</span>
-        </div>
+          <span className="text-sm text-text-secondary font-mono">
+            {copied ? "Copied!" : truncated}
+          </span>
+        </button>
         <button
           onClick={() => logout()}
           className="
