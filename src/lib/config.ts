@@ -25,3 +25,6 @@ export const SMTHLY_ADMIN_ADDRESS =
 
 export const EXPLORER_BASE_URL =
   process.env.NEXT_PUBLIC_EXPLORER_BASE_URL ?? "";
+
+export const CHAIN_ID =
+  process.env.NEXT_PUBLIC_CHAIN_ID ?? "xion-testnet-2";

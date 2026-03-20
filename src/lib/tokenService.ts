@@ -1,5 +1,16 @@
 import { SMTHLY_TOKEN_DENOM, REST_ENDPOINT } from "@/lib/config";
-import type { SigningCosmWasmClient } from "@cosmjs/cosmwasm-stargate";
+import type { Coin, StdFee } from "@cosmjs/amino";
+import type { DeliverTxResponse } from "@cosmjs/stargate";
+
+interface TokenSender {
+  sendTokens(
+    senderAddress: string,
+    recipientAddress: string,
+    amount: readonly Coin[],
+    fee: StdFee | "auto" | number,
+    memo?: string,
+  ): Promise<DeliverTxResponse | unknown>;
+}
 
 export async function queryBalance(address: string): Promise<string> {
   if (!SMTHLY_TOKEN_DENOM || !REST_ENDPOINT) return "0";
@@ -17,7 +28,7 @@ export async function queryBalance(address: string): Promise<string> {
 }
 
 export async function transferTokens(
-  client: SigningCosmWasmClient,
+  client: TokenSender,
   sender: string,
   recipient: string,
   amount: string
