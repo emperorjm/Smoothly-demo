@@ -2,12 +2,13 @@
 
 import { SMTHLY_REWARDS_AMOUNT } from "@/lib/config";
 import { isProQualified } from "@/lib/threshold";
+import { registerTokenFactoryTypes } from "@/lib/tokenFactoryTypes";
 import { queryBalance } from "@/lib/tokenService";
 import {
   useAbstraxionAccount,
   useAbstraxionSigningClient,
 } from "@burnt-labs/abstraxion";
-import React, { createContext, useCallback, useContext, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 
 interface SmoothlyState {
   isVerified: boolean;
@@ -43,6 +44,13 @@ export function SmoothlyProvider({ children }: { children: React.ReactNode }) {
   const [matchCount, setMatchCount] = useState(0);
   const [smthlyBalance, setSmthlyBalance] = useState("0");
   const [tokensClaimed, setTokensClaimed] = useState(false);
+
+  useEffect(() => {
+    if (client && "registry" in client) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      registerTokenFactoryTypes((client as any).registry);
+    }
+  }, [client]);
 
   const isQualified = isProQualified(matchCount);
 
